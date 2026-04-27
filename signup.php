@@ -1,39 +1,53 @@
 <?php
-session_start();
 include("../config/db.php");
+$success = false;
+$error = false;
 
-if(isset($_POST['login'])){
-    $email = $_POST['email'];
-    $password = $_POST['password'];
+if(isset($_POST['signup'])){
+    $name = mysqli_real_escape_string($conn, $_POST['name']);
+    $email = mysqli_real_escape_string($conn, $_POST['email']);
+    $phone = mysqli_real_escape_string($conn, $_POST['phone']);
+    $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+    $student_id = mysqli_real_escape_string($conn, $_POST['student_id']);
+    $department = mysqli_real_escape_string($conn, $_POST['department']);
+
     $allowed_domain = "muet.edu.pk";
-    
     $email_parts = explode("@", $email);
-    if(count($email_parts) != 2 || $email_parts[1] != $allowed_domain){
+    
+    // Validate phone number (Pakistan format)
+    $phone_pattern = "/^03[0-9]{9}$/"; // Pakistani mobile number format: 03XXXXXXXXX
+    if(!preg_match($phone_pattern, $phone)){
+        $error = "Invalid phone number! Must be 11 digits starting with 03 (e.g., 03001234567)";
+    } elseif(count($email_parts) != 2 || $email_parts[1] != $allowed_domain){
         $error = "Only university email (@muet.edu.pk) allowed!";
     } else {
-        $stmt = $conn->prepare("SELECT * FROM students WHERE email = ?");
-        $stmt->bind_param("s", $email);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $user = $result->fetch_assoc();
+        // Check if email or student_id already exists
+        $check = $conn->prepare("SELECT * FROM students WHERE email = ? OR student_id = ?");
+        $check->bind_param("ss", $email, $student_id);
+        $check->execute();
+        $result = $check->get_result();
         
-        if($user && password_verify($password, $user['password'])){
-            $_SESSION['student_id'] = $user['id'];
-            $_SESSION['name'] = $user['name'];
-            $_SESSION['email'] = $user['email'];
-            header("Location: dashboard.php");
-            exit;
+        if($result->num_rows > 0){
+            $error = "Email or Student ID already exists!";
         } else {
-            $error = "Invalid email or password!";
+            $stmt = $conn->prepare("INSERT INTO students (name, email, phone, password, student_id, department) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("ssssss", $name, $email, $phone, $password, $student_id, $department);
+            
+            if($stmt->execute()){
+                $success = "Signup successful! Redirecting to login...";
+            } else {
+                $error = "Registration failed. Please try again.";
+            }
+            $stmt->close();
         }
-        $stmt->close();
+        $check->close();
     }
 }
 ?>
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Student Login - JurisGuide</title>
+    <title>Student Signup - JurisGuide</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -72,20 +86,20 @@ if(isset($_POST['login'])){
             pointer-events: none;
         }
         
-        /* Login Card */
-        .login-card {
+        /* Signup Card */
+        .signup-card {
             background: white;
             border-radius: 32px;
             box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
             padding: 45px 40px;
-            width: 480px;
+            width: 580px;
             max-width: 100%;
             position: relative;
             z-index: 1;
             transition: transform 0.3s ease;
         }
         
-        .login-card:hover {
+        .signup-card:hover {
             transform: translateY(-5px);
         }
         
@@ -165,7 +179,7 @@ if(isset($_POST['login'])){
         
         /* Form Groups */
         .form-group {
-            margin-bottom: 22px;
+            margin-bottom: 20px;
         }
         
         .form-group label {
@@ -181,7 +195,13 @@ if(isset($_POST['login'])){
             margin-right: 8px;
         }
         
-        /* Input Container - FIXED */
+        .form-group label .optional {
+            color: #999;
+            font-weight: normal;
+            font-size: 11px;
+        }
+        
+        /* Input Container */
         .input-container {
             position: relative;
             width: 100%;
@@ -215,7 +235,17 @@ if(isset($_POST['login'])){
             box-shadow: 0 0 0 4px rgba(102,126,234,0.1);
         }
         
-        /* Password Toggle Button - FIXED Inside Container */
+        select.form-control {
+            appearance: none;
+            cursor: pointer;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23667eea' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: calc(100% - 16px) center;
+            background-size: 14px;
+            padding-right: 45px;
+        }
+        
+        /* Password Toggle */
         .password-toggle {
             position: absolute;
             right: 16px;
@@ -225,7 +255,6 @@ if(isset($_POST['login'])){
             color: #9ca3af;
             font-size: 16px;
             z-index: 2;
-            transition: color 0.3s;
             background: transparent;
             border: none;
             padding: 0;
@@ -238,8 +267,15 @@ if(isset($_POST['login'])){
             color: #667eea;
         }
         
-        /* Login Button */
-        .btn-login {
+        /* Row for two columns */
+        .row-two {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        /* Signup Button */
+        .btn-signup {
             width: 100%;
             padding: 14px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -254,12 +290,12 @@ if(isset($_POST['login'])){
             margin-bottom: 20px;
         }
         
-        .btn-login:hover {
+        .btn-signup:hover {
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(102,126,234,0.3);
         }
         
-        .btn-login i {
+        .btn-signup i {
             margin-right: 8px;
         }
         
@@ -283,6 +319,12 @@ if(isset($_POST['login'])){
                 opacity: 1;
                 transform: translateY(0);
             }
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
         }
         
         .alert-danger {
@@ -349,9 +391,14 @@ if(isset($_POST['login'])){
         }
         
         /* Responsive */
-        @media (max-width: 480px) {
-            .login-card {
+        @media (max-width: 600px) {
+            .signup-card {
                 padding: 35px 25px;
+            }
+            
+            .row-two {
+                grid-template-columns: 1fr;
+                gap: 20px;
             }
             
             .logo-icon-square {
@@ -389,7 +436,7 @@ if(isset($_POST['login'])){
     </style>
 </head>
 <body>
-    <div class="login-card">
+    <div class="signup-card">
         <!-- Logo Section - Consistent Branding -->
         <div class="logo-section">
             <a href="../index.php" class="logo-wrapper">
@@ -403,53 +450,123 @@ if(isset($_POST['login'])){
         
         <!-- Form Title -->
         <div class="form-title">
-            <h3>Welcome Back!</h3>
-            <p>Login to access your account</p>
+            <h3>Create Account</h3>
+            <p>Join JurisGuide to report and track complaints</p>
         </div>
         
-        <?php if(isset($error)): ?>
+        <?php if($error): ?>
         <div class="alert alert-danger">
             <i class="fas fa-exclamation-circle"></i>
             <span><?php echo $error; ?></span>
         </div>
         <?php endif; ?>
+        
+        <?php if($success): ?>
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle"></i>
+            <span><?php echo $success; ?></span>
+        </div>
+        <script>
+            setTimeout(function(){
+                window.location.href = 'login.php';
+            }, 2000);
+        </script>
+        <?php endif; ?>
 
         <form method="POST">
-            <!-- Email Field -->
+            <!-- Full Name -->
+            <div class="form-group">
+                <label><i class="fas fa-user"></i> Full Name</label>
+                <div class="input-container">
+                    <i class="fas fa-user input-icon"></i>
+                    <input type="text" name="name" class="form-control" placeholder="Enter your full name" required>
+                </div>
+            </div>
+            
+            <!-- Phone Number -->
+            <div class="form-group">
+                <label><i class="fas fa-phone"></i> Phone Number</label>
+                <div class="input-container">
+                    <i class="fas fa-phone input-icon"></i>
+                    <input type="tel" name="phone" class="form-control" placeholder="03XXXXXXXXX (e.g., 03001234567)" required>
+                </div>
+                <small class="text-muted" style="display: block; margin-top: 5px; font-size: 11px;">
+                    <i class="fas fa-info-circle"></i> Enter 11-digit Pakistani mobile number starting with 03
+                </small>
+            </div>
+            
+            <!-- Two Column Layout for Student ID and Department -->
+            <div class="row-two">
+                <!-- Student ID -->
+                <div class="form-group">
+                    <label><i class="fas fa-id-card"></i> Student ID</label>
+                    <div class="input-container">
+                        <i class="fas fa-id-card input-icon"></i>
+                        <input type="text" name="student_id" class="form-control" placeholder="e.g., 21CS101" required>
+                    </div>
+                </div>
+                
+                <!-- Department -->
+                <div class="form-group">
+                    <label><i class="fas fa-building"></i> Department</label>
+                    <div class="input-container">
+                        <i class="fas fa-building input-icon"></i>
+                        <select name="department" class="form-control" required>
+                            <option value="" disabled selected>Select Department</option>
+                            <option>Computer Systems Engineering</option>
+                            <option>Software Engineering</option>
+                            <option>Electrical Engineering</option>
+                            <option>Mechanical Engineering</option>
+                            <option>Civil Engineering</option>
+                            <option>Electronics Engineering</option>
+                            <option>Telecommunication Engineering</option>
+                            <option>Biomedical Engineering</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- University Email -->
             <div class="form-group">
                 <label><i class="fas fa-envelope"></i> University Email</label>
                 <div class="input-container">
                     <i class="fas fa-envelope input-icon"></i>
                     <input type="email" name="email" class="form-control" placeholder="your.name@muet.edu.pk" required>
                 </div>
+                <small class="text-muted" style="display: block; margin-top: 5px; font-size: 11px;">
+                    <i class="fas fa-info-circle"></i> Only @muet.edu.pk emails are allowed
+                </small>
             </div>
             
-            <!-- Password Field with Eye Icon INSIDE Container -->
+            <!-- Password -->
             <div class="form-group">
                 <label><i class="fas fa-lock"></i> Password</label>
                 <div class="input-container">
                     <i class="fas fa-lock input-icon"></i>
-                    <input type="password" name="password" id="password" class="form-control" placeholder="Enter your password" required>
+                    <input type="password" name="password" id="password" class="form-control" placeholder="Create a strong password" required>
                     <button type="button" class="password-toggle" onclick="togglePassword()">
                         <i class="fas fa-eye" id="toggleIcon"></i>
                     </button>
                 </div>
+                <small class="text-muted" style="display: block; margin-top: 5px; font-size: 11px;">
+                    <i class="fas fa-shield-alt"></i> Minimum 8 characters recommended
+                </small>
             </div>
             
-            <button type="submit" name="login" class="btn-login">
-                <i class="fas fa-sign-in-alt"></i> Login
+            <button type="submit" name="signup" class="btn-signup">
+                <i class="fas fa-user-plus"></i> Create Account
             </button>
         </form>
         
         <div class="links">
-            <a href="signup.php">Create Account</a>
+            <a href="login.php">Already have an account? Login</a>
             <span class="separator">|</span>
             <a href="../index.php">Back to Home</a>
         </div>
         
         <div class="domain-info">
             <i class="fas fa-info-circle"></i> 
-            Only <strong>@muet.edu.pk</strong> email addresses are allowed
+            Registration requires: <strong>@muet.edu.pk email</strong> | <strong>Valid Student ID</strong> | <strong>Valid Phone Number</strong>
         </div>
         
         <div class="footer-text">
